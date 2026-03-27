@@ -109,6 +109,7 @@ export async function getDashboardStats(
   const deals_by_status = Object.values(DealStatus).map((status) => {
     const row = dealsByStatus.find((r) => r.status === status);
     return {
+      status,
       count: (row?._count as { _all: number } | undefined)?._all ?? 0,
       total_amount: Number((row?._sum as { amount: unknown } | undefined)?.amount ?? 0),
     };
