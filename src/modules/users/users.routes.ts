@@ -19,7 +19,7 @@ const listUsersSchema = paginationSchema.extend({
 // GET /api/users
 router.get('/', validateQuery(listUsersSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page, limit, role, active, search } = req.query as z.infer<typeof listUsersSchema>;
+    const { page, limit, role, active, search } = req.query as unknown as z.infer<typeof listUsersSchema>;
 
     const where = {
       ...(role   !== undefined && { role }),

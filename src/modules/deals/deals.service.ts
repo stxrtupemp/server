@@ -5,17 +5,17 @@ import { NotFoundError, ForbiddenError } from '../../middleware/errorHandler';
 import type { CreateDealInput, UpdateDealInput, PatchDealStatusInput, ListDealsInput } from './deals.schema';
 
 const dealSelect = {
-  id:             true,
-  status:         true,
-  amount:         true,
+  id: true,
+  status: true,
+  amount: true,
   commission_pct: true,
-  notes:          true,
+  notes: true,
   expected_close: true,
-  created_at:     true,
-  updated_at:     true,
+  created_at: true,
+  updated_at: true,
   property: { select: { id: true, title: true, slug: true, price: true, city: true, images: { where: { is_cover: true }, take: 1, select: { url: true } } } },
-  client:   { select: { id: true, name: true, email: true, phone: true, type: true } },
-  agent:    { select: { id: true, name: true, email: true } },
+  client: { select: { id: true, name: true, email: true, phone: true, type: true } },
+  agent: { select: { id: true, name: true, email: true } },
 } satisfies Prisma.DealSelect;
 
 // ─── List ─────────────────────────────────────────────────────────────────────
@@ -25,17 +25,17 @@ export async function listDeals(input: ListDealsInput, requesterId: string, requ
   const resolvedAgentId = requesterRole === Role.AGENT && !agent_id ? requesterId : agent_id;
 
   const where: Prisma.DealWhereInput = {
-    ...(status          && { status }),
+    ...(status && { status }),
     ...(resolvedAgentId && { agent_id: resolvedAgentId }),
-    ...(client_id       && { client_id }),
-    ...(property_id     && { property_id }),
+    ...(client_id && { client_id }),
+    ...(property_id && { property_id }),
   };
 
   const orderBy: Prisma.DealOrderByWithRelationInput =
-    sort === 'created_at_asc'    ? { created_at: 'asc' }     :
-    sort === 'expected_close_asc'? { expected_close: 'asc' } :
-    sort === 'amount_desc'       ? { amount: 'desc' }        :
-                                   { created_at: 'desc' };
+    sort === 'created_at_asc' ? { created_at: 'asc' } :
+      sort === 'expected_close_asc' ? { expected_close: 'asc' } :
+        sort === 'amount_desc' ? { amount: 'desc' } :
+          { created_at: 'desc' };
 
   const [total, items] = await prisma.$transaction([
     prisma.deal.count({ where }),
@@ -102,23 +102,25 @@ export async function getDealStats(requesterId: string, requesterRole: Role) {
 
   const [grouped, amountByStatus] = await prisma.$transaction([
     prisma.deal.groupBy({
-      by:    ['status'],
+      by: ['status'],
       where: agentFilter,
       _count: { _all: true },
+      orderBy: { _count: { status: 'desc' } },
     }),
     prisma.deal.groupBy({
-      by:    ['status'],
+      by: ['status'],
       where: { ...agentFilter, amount: { not: null } },
-      _sum:  { amount: true },
+      _sum: { amount: true },
+      orderBy: { _sum: { amount: 'desc' } },
     }),
   ]);
 
-  const countMap  = Object.fromEntries(grouped.map((r) => [r.status, r._count._all]));
-  const amountMap = Object.fromEntries(amountByStatus.map((r) => [r.status, r._sum.amount ?? 0]));
+  const countMap = Object.fromEntries(grouped.map((r) => [r.status, (r._count as { _all: number })._all]));
+  const amountMap = Object.fromEntries(amountByStatus.map((r) => [r.status, (r._sum as { amount: unknown })?.amount ?? 0]));
 
   return statusList.map((status) => ({
     status,
-    count:  countMap[status]  ?? 0,
+    count: countMap[status] ?? 0,
     amount: amountMap[status] ?? 0,
   }));
 }
