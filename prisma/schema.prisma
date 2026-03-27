@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  AGENT
+  VIEWER
+}
+
+enum PropertyType {
+  APARTMENT
+  HOUSE
+  LAND
+  COMMERCIAL
+  OFFICE
+}
+
+enum OperationType {
+  SALE
+  RENT
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+  RENTED
+}
+
+enum ClientType {
+  BUYER
+  SELLER
+  TENANT
+  LANDLORD
+}
+
+enum ClientSource {
+  WEB
+  REFERRAL
+  PORTAL
+  WALK_IN
+  OTHER
+}
+
+enum DealStatus {
+  LEAD
+  CONTACT
+  VISIT
+  NEGOTIATION
+  CLOSING
+  WON
+  LOST
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NoteEntityType {
+  PROPERTY
+  CLIENT
+  DEAL
+}
+
+// ─────────────────────────────────────────────
+// USERS
+// ─────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password_hash String
+  name          String
+  role          Role     @default(AGENT)
+  phone         String?
+  avatar_url    String?
+  active        Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  // Relations
+  properties     Property[]   @relation("AgentProperties")
+  clients        Client[]     @relation("AgentClients")
+  deals          Deal[]       @relation("AgentDeals")
+  tasks_assigned Task[]       @relation("AssignedTasks")
+  tasks_created  Task[]       @relation("CreatedTasks")
+  notes          Note[]       @relation("AuthorNotes")
+
+  @@index([email])
+  @@index([role])
+  @@index([active])
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// PROPERTIES
+// ─────────────────────────────────────────────
+
+model Property {
+  id          String         @id @default(cuid())
+  title       String
+  slug        String         @unique
+  description String?        @db.Text
+  type        PropertyType
+  operation   OperationType
+  status      PropertyStatus @default(AVAILABLE)
+  price       Decimal        @db.Decimal(14, 2)
+  currency    String         @default("EUR")
+  area_m2     Decimal?       @db.Decimal(10, 2)
+  bedrooms    Int?
+  bathrooms   Int?
+  parking     Int?
+  address     String
+  city        String
+  zone        String?
+  lat         Decimal?       @db.Decimal(10, 8)
+  lng         Decimal?       @db.Decimal(11, 8)
+  features    Json?          // { pool, garden, terrace, elevator, ... }
+  agent_id    String
+  created_at  DateTime       @default(now())
+  updated_at  DateTime       @updatedAt
+
+  // Relations
+  agent       User             @relation("AgentProperties", fields: [agent_id], references: [id], onDelete: Restrict)
+  images      PropertyImage[]
+  deals       Deal[]
+  tasks       Task[]           @relation("PropertyTasks")
+  // notes: use raw query or filter by entity_type=PROPERTY
+  web_contacts WebContact[]
+
+  @@index([slug])
+  @@index([agent_id])
+  @@index([status])
+  @@index([type])
+  @@index([operation])
+  @@index([city])
+  @@index([zone])
+  @@index([price])
+  @@index([created_at])
+  @@map("properties")
+}
+
+// ─────────────────────────────────────────────
+// PROPERTY IMAGES
+// ─────────────────────────────────────────────
+
+model PropertyImage {
+  id          String   @id @default(cuid())
+  property_id String
+  url         String
+  order       Int      @default(0)
+  is_cover    Boolean  @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  property    Property @relation(fields: [property_id], references: [id], onDelete: Cascade)
+
+  @@index([property_id])
+  @@index([property_id, is_cover])
+  @@index([property_id, order])
+  @@map("property_images")
+}
+
+// ─────────────────────────────────────────────
+// CLIENTS
+// ─────────────────────────────────────────────
+
+model Client {
+  id         String       @id @default(cuid())
+  name       String
+  email      String?
+  phone      String?
+  type       ClientType
+  source     ClientSource @default(OTHER)
+  notes      String?      @db.Text
+  agent_id   String
+  created_at DateTime     @default(now())
+  updated_at DateTime     @updatedAt
+
+  // Relations
+  agent      User         @relation("AgentClients", fields: [agent_id], references: [id], onDelete: Restrict)
+  deals      Deal[]
+  tasks      Task[]       @relation("ClientTasks")
+  // client_notes: use raw query or filter by entity_type=CLIENT
+
+  @@index([agent_id])
+  @@index([email])
+  @@index([type])
+  @@index([source])
+  @@index([created_at])
+  @@map("clients")
+}
+
+// ─────────────────────────────────────────────
+// DEALS (Pipeline)
+// ─────────────────────────────────────────────
+
+model Deal {
+  id              String     @id @default(cuid())
+  property_id     String
+  client_id       String
+  agent_id        String
+  status          DealStatus @default(LEAD)
+  amount          Decimal?   @db.Decimal(14, 2)
+  commission_pct  Decimal?   @db.Decimal(5, 2)
+  notes           String?    @db.Text
+  expected_close  DateTime?
+  created_at      DateTime   @default(now())
+  updated_at      DateTime   @updatedAt
+
+  // Relations
+  property        Property   @relation(fields: [property_id], references: [id], onDelete: Restrict)
+  client          Client     @relation(fields: [client_id], references: [id], onDelete: Restrict)
+  agent           User       @relation("AgentDeals", fields: [agent_id], references: [id], onDelete: Restrict)
+  tasks           Task[]     @relation("DealTasks")
+  // deal_notes: use raw query or filter by entity_type=DEAL
+
+  @@index([agent_id])
+  @@index([property_id])
+  @@index([client_id])
+  @@index([status])
+  @@index([expected_close])
+  @@index([created_at])
+  @@map("deals")
+}
+
+// ─────────────────────────────────────────────
+// TASKS
+// ─────────────────────────────────────────────
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?      @db.Text
+  due_date    DateTime?
+  completed   Boolean      @default(false)
+  priority    TaskPriority @default(MEDIUM)
+  deal_id     String?
+  property_id String?
+  client_id   String?
+  assigned_to String
+  created_by  String
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+
+  // Relations
+  deal        Deal?     @relation("DealTasks",     fields: [deal_id],     references: [id], onDelete: SetNull)
+  property    Property? @relation("PropertyTasks", fields: [property_id], references: [id], onDelete: SetNull)
+  client      Client?   @relation("ClientTasks",   fields: [client_id],   references: [id], onDelete: SetNull)
+  assignee    User      @relation("AssignedTasks",  fields: [assigned_to], references: [id], onDelete: Restrict)
+  creator     User      @relation("CreatedTasks",   fields: [created_by],  references: [id], onDelete: Restrict)
+
+  @@index([assigned_to])
+  @@index([created_by])
+  @@index([deal_id])
+  @@index([property_id])
+  @@index([client_id])
+  @@index([completed])
+  @@index([due_date])
+  @@index([priority])
+  @@map("tasks")
+}
+
+// ─────────────────────────────────────────────
+// NOTES (polymorphic via entity_type + entity_id)
+// ─────────────────────────────────────────────
+
+model Note {
+  id          String         @id @default(cuid())
+  content     String         @db.Text
+  entity_type NoteEntityType
+  entity_id   String
+  author_id   String
+  created_at  DateTime       @default(now())
+  updated_at  DateTime       @updatedAt
+
+  // Relations
+  author      User           @relation("AuthorNotes", fields: [author_id], references: [id], onDelete: Restrict)
+  // Polymorphic: entity_type + entity_id point to Property, Client or Deal.
+  // Soft-FK helpers removed — Prisma cannot enforce a single FK to 3 tables simultaneously.
+
+  @@index([author_id])
+  @@index([entity_type, entity_id])
+  @@index([created_at])
+  @@map("notes")
+}
+
+// ─────────────────────────────────────────────
+// WEB CONTACTS (formulario público)
+// ─────────────────────────────────────────────
+
+model WebContact {
+  id          String    @id @default(cuid())
+  property_id String?
+  name        String
+  email       String
+  phone       String?
+  message     String    @db.Text
+  read        Boolean   @default(false)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  // Relations
+  property    Property? @relation(fields: [property_id], references: [id], onDelete: SetNull)
+
+  @@index([property_id])
+  @@index([read])
+  @@index([created_at])
+  @@map("web_contacts")
+}
