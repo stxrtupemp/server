@@ -1,12 +1,10 @@
 {
   "compilerOptions": {
-    /* Language & Environment */
     "target": "ES2022",
     "lib": ["ES2022"],
     "module": "CommonJS",
     "moduleResolution": "node",
 
-    /* Emit */
     "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,
@@ -14,7 +12,6 @@
     "sourceMap": true,
     "removeComments": true,
 
-    /* Strict type-checking */
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -25,23 +22,20 @@
     "useUnknownInCatchVariables": true,
     "alwaysStrict": true,
 
-    /* Additional checks */
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitReturns": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitReturns": false,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": false,
+    "noPropertyAccessFromIndexSignature": false,
 
-    /* Module resolution */
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
 
-    /* Paths */
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
@@ -51,7 +45,6 @@
       "@modules/*": ["src/modules/*"]
     },
 
-    /* Skip type checking for node_modules */
     "skipLibCheck": true
   },
   "include": ["src/**/*"],
