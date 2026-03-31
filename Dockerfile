@@ -1,11 +1,13 @@
 # ── Build stage ────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 
+# OpenSSL needed for Prisma to detect the correct binary target (linux-musl-openssl-3.0.x)
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
-# Install dependencies first (better layer caching)
 COPY package.json package-lock.json* ./
-RUN npm ci --ignore-scripts
+RUN npm ci
 
 COPY prisma ./prisma
 RUN npx prisma generate
@@ -17,20 +19,22 @@ RUN npm run build
 # ── Production stage ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 
+# OpenSSL required at runtime so Prisma detects the correct schema-engine binary
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Only production deps
+# npm ci (without --ignore-scripts) so Prisma postinstall downloads schema-engine
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy compiled output and Prisma files
+# Copy compiled output and Prisma generated client from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
-# Create upload directory
 RUN mkdir -p /app/uploads && chown -R node:node /app
 
 USER node
@@ -40,4 +44,5 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD wget -qO- http://localhost:4000/health || exit 1
 
-CMD ["node", "dist/index.js"]
+# Run migrations before starting the server
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
