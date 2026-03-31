@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "postbuild": "",
-    "build": "tsc --project tsconfig.json",
+    "build": "tsc --project tsconfig.json && npx prisma generate",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "db:migrate": "prisma migrate dev",
