@@ -19,24 +19,26 @@ import * as ctrl from './properties.controller';
 const router = Router();
 
 // ── Public ────────────────────────────────────────────────────────────────────
+router.get('/',
+  validateQuery(listPropertiesSchema),
+  optionalAuthenticate,
+  ctrl.list,
+);
+
 router.get('/slug/:slug',
   validateParams(slugParamSchema),
   optionalAuthenticate,
   ctrl.getBySlug,
 );
 
-// ── Protected ─────────────────────────────────────────────────────────────────
-router.use(authenticate);
-
-router.get('/',
-  validateQuery(listPropertiesSchema),
-  ctrl.list,
-);
-
 router.get('/:id',
   validateParams(propertyIdParamSchema),
+  optionalAuthenticate,
   ctrl.getById,
 );
+
+// ── Protected ─────────────────────────────────────────────────────────────────
+router.use(authenticate);
 
 router.post('/',
   authorize(Role.ADMIN, Role.AGENT),
