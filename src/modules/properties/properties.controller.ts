@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { Role } from '@prisma/client';
 import * as svc from './properties.service';
 import type {
   CreatePropertyInput,
@@ -15,8 +16,8 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
   try {
     const { items, meta } = await svc.listProperties(
       req.query as unknown as ListPropertiesInput,
-      req.user!.sub,
-      req.user!.role,
+      req.user?.sub ?? '',
+      req.user?.role ?? Role.VIEWER,
     );
     res.json(ok(items, meta));
   } catch (e) { next(e); }
@@ -26,7 +27,7 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const property = await svc.getPropertyById(req.params['id']!, req.user!.sub, req.user!.role);
+    const property = await svc.getPropertyById(req.params['id']!, req.user?.sub ?? '', req.user?.role ?? Role.VIEWER);
     res.json(ok(property));
   } catch (e) { next(e); }
 }
