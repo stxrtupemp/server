@@ -5,7 +5,7 @@
     "buildCommand": "npm install && npm run build"
   },
   "deploy": {
-    "startCommand": "sh -c 'PRISMA_SCHEMA_ENGINE_BINARY=/app/node_modules/@prisma/engines/schema-engine-linux-musl-openssl-3.0.x npx prisma migrate deploy && node dist/index.js'",
+    "startCommand": "npx prisma migrate deploy && node dist/index.js",
     "restartPolicyType": "ON_FAILURE"
   }
 }
