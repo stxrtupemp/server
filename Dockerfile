@@ -20,7 +20,8 @@ RUN npm run build
 FROM node:20-alpine AS runner
 
 # OpenSSL required at runtime so Prisma detects the correct schema-engine binary
-RUN apk add --no-cache openssl
+# postgresql-client provides psql for the startup baseline check
+RUN apk add --no-cache openssl postgresql-client
 
 WORKDIR /app
 
@@ -35,7 +36,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
-RUN mkdir -p /app/uploads && chown -R node:node /app
+COPY start.sh ./start.sh
+RUN chmod +x start.sh && mkdir -p /app/uploads && chown -R node:node /app
 
 USER node
 
@@ -45,4 +47,4 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD wget -qO- http://localhost:4000/health || exit 1
 
 # Run migrations before starting the server
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]
+CMD ["sh", "/app/start.sh"]
