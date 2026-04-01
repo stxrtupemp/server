@@ -15,7 +15,7 @@ TABLES_EXIST=$(psql "$DATABASE_URL" -tAc \
 
 if [ -z "$MIGRATIONS_EXIST" ] && [ -n "$TABLES_EXIST" ]; then
   echo ">> Existing schema detected (db push). Baselining migration history..."
-  npx prisma migrate resolve --applied "20260331000000_init"
+  npx prisma migrate resolve --applied "20260401155717_init"
 fi
 
 echo ">> Running migrations..."
