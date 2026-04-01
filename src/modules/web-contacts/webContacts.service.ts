@@ -18,23 +18,20 @@ const webContactSelect = {
   },
 } satisfies Prisma.WebContactSelect;
 
-// ─── Create (public — no auth) ────────────────────────────────────────────────
-
-export async function createWebContact(input: CreateWebContactInput) {
+export async function createWebContact(input: CreateWebContactInput, tenantId: string) {
   return prisma.webContact.create({
-    data:   input,
+    data:   { ...input, tenant_id: tenantId },
     select: webContactSelect,
   });
 }
 
-// ─── List ─────────────────────────────────────────────────────────────────────
-
-export async function listWebContacts(input: ListWebContactsInput) {
+export async function listWebContacts(input: ListWebContactsInput, tenantId: string | null) {
   const { page, limit, sort, read, property_id } = input;
 
   const where: Prisma.WebContactWhereInput = {
+    ...(tenantId    && { tenant_id: tenantId }),
     ...(read        !== undefined && { read }),
-    ...(property_id               && { property_id }),
+    ...(property_id && { property_id }),
   };
 
   const orderBy: Prisma.WebContactOrderByWithRelationInput =
@@ -42,46 +39,32 @@ export async function listWebContacts(input: ListWebContactsInput) {
 
   const [total, items] = await prisma.$transaction([
     prisma.webContact.count({ where }),
-    prisma.webContact.findMany({
-      where,
-      orderBy,
-      ...paginate(page, limit),
-      select: webContactSelect,
-    }),
+    prisma.webContact.findMany({ where, orderBy, ...paginate(page, limit), select: webContactSelect }),
   ]);
 
   return { items, meta: buildMeta(page, limit, total) };
 }
 
-// ─── Get by ID ────────────────────────────────────────────────────────────────
-
-export async function getWebContactById(id: string) {
-  const contact = await prisma.webContact.findUnique({
-    where:  { id },
+export async function getWebContactById(id: string, tenantId: string | null) {
+  const contact = await prisma.webContact.findFirst({
+    where:  { id, ...(tenantId && { tenant_id: tenantId }) },
     select: webContactSelect,
   });
   if (!contact) throw new NotFoundError('WebContact');
   return contact;
 }
 
-// ─── Mark as read ─────────────────────────────────────────────────────────────
-
-export async function markAsRead(id: string) {
-  const existing = await prisma.webContact.findUnique({
-    where:  { id },
+export async function markAsRead(id: string, tenantId: string | null) {
+  const existing = await prisma.webContact.findFirst({
+    where:  { id, ...(tenantId && { tenant_id: tenantId }) },
     select: { id: true },
   });
   if (!existing) throw new NotFoundError('WebContact');
-
-  return prisma.webContact.update({
-    where:  { id },
-    data:   { read: true },
-    select: webContactSelect,
-  });
+  return prisma.webContact.update({ where: { id }, data: { read: true }, select: webContactSelect });
 }
 
-// ─── Unread count (used by dashboard) ────────────────────────────────────────
-
-export async function countUnread(): Promise<number> {
-  return prisma.webContact.count({ where: { read: false } });
+export async function countUnread(tenantId: string | null): Promise<number> {
+  return prisma.webContact.count({
+    where: { read: false, ...(tenantId && { tenant_id: tenantId }) },
+  });
 }

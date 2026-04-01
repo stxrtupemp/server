@@ -4,7 +4,7 @@ import { ok } from '../../lib/pagination';
 
 export async function stats(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const data = await getDashboardStats(req.user!.sub, req.user!.role);
+    const data = await getDashboardStats(req.user!.sub, req.user!.role, req.user!.tenantId);
     res.json(ok(data));
   } catch (e) { next(e); }
 }

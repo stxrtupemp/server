@@ -27,12 +27,13 @@ interface RecentDeal {
 export async function getDashboardStats(
   requesterId: string,
   requesterRole: Role,
+  tenantId: string | null,
 ): Promise<DashboardStats> {
-  // Agents only see their own scope
-  const agentFilter: Prisma.DealWhereInput = requesterRole === Role.AGENT ? { agent_id: requesterId } : {};
-  const propAgentFilter: Prisma.PropertyWhereInput = requesterRole === Role.AGENT ? { agent_id: requesterId } : {};
-  const clientFilter: Prisma.ClientWhereInput = requesterRole === Role.AGENT ? { agent_id: requesterId } : {};
-  const taskFilter: Prisma.TaskWhereInput = requesterRole === Role.AGENT ? { assigned_to: requesterId } : {};
+  const tenantFilter = tenantId ? { tenant_id: tenantId } : {};
+  const agentFilter: Prisma.DealWhereInput     = { ...tenantFilter, ...(requesterRole === Role.AGENT ? { agent_id: requesterId } : {}) };
+  const propAgentFilter: Prisma.PropertyWhereInput = { ...tenantFilter, ...(requesterRole === Role.AGENT ? { agent_id: requesterId } : {}) };
+  const clientFilter: Prisma.ClientWhereInput  = { ...tenantFilter, ...(requesterRole === Role.AGENT ? { agent_id: requesterId } : {}) };
+  const taskFilter: Prisma.TaskWhereInput      = { ...tenantFilter, ...(requesterRole === Role.AGENT ? { assigned_to: requesterId } : {}) };
 
   const now = new Date();
 
@@ -46,21 +47,14 @@ export async function getDashboardStats(
     unread_contacts,
     recent_deals,
   ] = await prisma.$transaction([
-    // 1. Total properties
     prisma.property.count({ where: propAgentFilter }),
-
-    // 2. Properties grouped by status
     prisma.property.groupBy({
       by: ['status'],
       where: propAgentFilter,
       _count: { _all: true },
       orderBy: { _count: { status: 'desc' } },
     }),
-
-    // 3. Total clients
     prisma.client.count({ where: clientFilter }),
-
-    // 4. Deals grouped by status with sum
     prisma.deal.groupBy({
       by: ['status'],
       where: agentFilter,
@@ -68,39 +62,22 @@ export async function getDashboardStats(
       _sum: { amount: true },
       orderBy: { _count: { status: 'desc' } },
     }),
-
-    // 5. Pending tasks (not completed)
-    prisma.task.count({
-      where: { ...taskFilter, completed: false },
-    }),
-
-    // 6. Overdue tasks (due_date < now AND not completed)
-    prisma.task.count({
-      where: { ...taskFilter, completed: false, due_date: { lt: now } },
-    }),
-
-    // 7. Unread web contacts
-    prisma.webContact.count({ where: { read: false } }),
-
-    // 8. Recent 5 deals
+    prisma.task.count({ where: { ...taskFilter, completed: false } }),
+    prisma.task.count({ where: { ...taskFilter, completed: false, due_date: { lt: now } } }),
+    prisma.webContact.count({ where: { read: false, ...tenantFilter } }),
     prisma.deal.findMany({
       where: agentFilter,
       orderBy: { created_at: 'desc' },
       take: 5,
       select: {
-        id: true,
-        status: true,
-        amount: true,
-        expected_close: true,
-        created_at: true,
+        id: true, status: true, amount: true, expected_close: true, created_at: true,
         property: { select: { id: true, title: true, city: true } },
-        client: { select: { id: true, name: true } },
-        agent: { select: { id: true, name: true } },
+        client:   { select: { id: true, name: true } },
+        agent:    { select: { id: true, name: true } },
       },
     }),
   ]);
 
-  // Build status maps
   const properties_by_status = Object.values(PropertyStatus).map((status) => ({
     status,
     count: (propertiesByStatus.find((r) => r.status === status)?._count as { _all: number } | undefined)?._all ?? 0,
@@ -110,7 +87,7 @@ export async function getDashboardStats(
     const row = dealsByStatus.find((r) => r.status === status);
     return {
       status,
-      count: (row?._count as { _all: number } | undefined)?._all ?? 0,
+      count:        (row?._count as { _all: number } | undefined)?._all ?? 0,
       total_amount: Number((row?._sum as { amount: unknown } | undefined)?.amount ?? 0),
     };
   });
@@ -126,9 +103,6 @@ export async function getDashboardStats(
     tasks_pending,
     tasks_overdue,
     unread_contacts,
-    recent_deals: recent_deals.map((d) => ({
-      ...d,
-      amount: d.amount ? Number(d.amount) : null,
-    })),
+    recent_deals: recent_deals.map((d) => ({ ...d, amount: d.amount ? Number(d.amount) : null })),
   };
 }

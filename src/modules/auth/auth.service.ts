@@ -36,6 +36,7 @@ export interface SafeUser {
   phone:      string | null;
   avatar_url: string | null;
   active:     boolean;
+  tenant_id:  string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -50,10 +51,11 @@ function toSafeUser(user: User): SafeUser {
 
 function buildTokens(user: User): AuthTokens {
   const access_token  = signAccessToken({
-    sub:   user.id,
-    email: user.email,
-    role:  user.role,
-    name:  user.name,
+    sub:      user.id,
+    email:    user.email,
+    role:     user.role,
+    name:     user.name,
+    tenantId: user.tenant_id,
   });
   const refresh_token = signRefreshToken(user.id);
 
@@ -71,7 +73,6 @@ export async function login(input: LoginInput): Promise<{ user: SafeUser; tokens
   const user = await prisma.user.findUnique({ where: { email: input.email } });
 
   if (!user) {
-    // Constant-time: still hash to prevent timing attacks
     await bcrypt.hash(input.password, env.BCRYPT_ROUNDS);
     throw new UnauthorizedError('Invalid email or password');
   }
@@ -88,7 +89,10 @@ export async function login(input: LoginInput): Promise<{ user: SafeUser; tokens
   return { user: toSafeUser(user), tokens: buildTokens(user) };
 }
 
-export async function register(input: RegisterInput): Promise<{ user: SafeUser; tokens: AuthTokens }> {
+export async function register(
+  input: RegisterInput,
+  requesterTenantId: string | null,
+): Promise<{ user: SafeUser; tokens: AuthTokens }> {
   const existing = await prisma.user.findUnique({ where: { email: input.email } });
   if (existing) {
     throw new ConflictError('A user with that email already exists');
@@ -98,11 +102,12 @@ export async function register(input: RegisterInput): Promise<{ user: SafeUser; 
 
   const user = await prisma.user.create({
     data: {
-      email: input.email,
+      email:         input.email,
       password_hash,
-      name:  input.name,
-      role:  input.role,
-      phone: input.phone,
+      name:          input.name,
+      role:          input.role,
+      phone:         input.phone,
+      tenant_id:     requesterTenantId,
     },
   });
 

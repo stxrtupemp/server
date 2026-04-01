@@ -18,14 +18,17 @@ const clientSelect = {
   _count: { select: { deals: true } },
 } satisfies Prisma.ClientSelect;
 
-// ─── List ─────────────────────────────────────────────────────────────────────
-
-export async function listClients(input: ListClientsInput, requesterId: string, requesterRole: Role) {
+export async function listClients(
+  input: ListClientsInput,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
   const { page, limit, sort, type, source, agent_id, search } = input;
-
   const resolvedAgentId = requesterRole === Role.AGENT && !agent_id ? requesterId : agent_id;
 
   const where: Prisma.ClientWhereInput = {
+    ...(tenantId          && { tenant_id: tenantId }),
     ...(type              && { type }),
     ...(source            && { source }),
     ...(resolvedAgentId   && { agent_id: resolvedAgentId }),
@@ -52,10 +55,16 @@ export async function listClients(input: ListClientsInput, requesterId: string, 
   return { items, meta: buildMeta(page, limit, total) };
 }
 
-// ─── Get by ID ────────────────────────────────────────────────────────────────
-
-export async function getClientById(id: string, requesterId: string, requesterRole: Role) {
-  const client = await prisma.client.findUnique({ where: { id }, select: clientSelect });
+export async function getClientById(
+  id: string,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
+  const client = await prisma.client.findFirst({
+    where: { id, ...(tenantId && { tenant_id: tenantId }) },
+    select: clientSelect,
+  });
   if (!client) throw new NotFoundError('Client');
   if (requesterRole === Role.AGENT && client.agent.id !== requesterId) {
     throw new ForbiddenError('You can only view your own clients');
@@ -63,20 +72,31 @@ export async function getClientById(id: string, requesterId: string, requesterRo
   return client;
 }
 
-// ─── Create ───────────────────────────────────────────────────────────────────
-
-export async function createClient(input: CreateClientInput, requesterId: string, requesterRole: Role) {
+export async function createClient(
+  input: CreateClientInput,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
+  if (!tenantId) throw new ForbiddenError('A tenant context is required to create a client');
   const agentId = requesterRole === Role.ADMIN && input.agent_id ? input.agent_id : requesterId;
   return prisma.client.create({
-    data: { ...input, agent_id: agentId },
+    data: { ...input, agent_id: agentId, tenant_id: tenantId },
     select: clientSelect,
   });
 }
 
-// ─── Update ───────────────────────────────────────────────────────────────────
-
-export async function updateClient(id: string, input: UpdateClientInput, requesterId: string, requesterRole: Role) {
-  const existing = await prisma.client.findUnique({ where: { id }, select: { agent_id: true } });
+export async function updateClient(
+  id: string,
+  input: UpdateClientInput,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
+  const existing = await prisma.client.findFirst({
+    where: { id, ...(tenantId && { tenant_id: tenantId }) },
+    select: { agent_id: true },
+  });
   if (!existing) throw new NotFoundError('Client');
   if (requesterRole === Role.AGENT && existing.agent_id !== requesterId) {
     throw new ForbiddenError('You can only edit your own clients');
@@ -84,10 +104,11 @@ export async function updateClient(id: string, input: UpdateClientInput, request
   return prisma.client.update({ where: { id }, data: input, select: clientSelect });
 }
 
-// ─── Delete ───────────────────────────────────────────────────────────────────
-
-export async function deleteClient(id: string) {
-  const existing = await prisma.client.findUnique({ where: { id }, select: { id: true } });
+export async function deleteClient(id: string, tenantId: string | null) {
+  const existing = await prisma.client.findFirst({
+    where: { id, ...(tenantId && { tenant_id: tenantId }) },
+    select: { id: true },
+  });
   if (!existing) throw new NotFoundError('Client');
   await prisma.client.delete({ where: { id } });
 }

@@ -11,17 +11,24 @@ const router = Router();
 router.use(authenticate);
 
 const listUsersSchema = paginationSchema.extend({
-  role:   z.nativeEnum(Role).optional(),
-  active: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
-  search: z.string().trim().optional(),
+  role:      z.nativeEnum(Role).optional(),
+  active:    z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  search:    z.string().trim().optional(),
+  tenant_id: z.string().optional(),
 });
 
 // GET /api/users
 router.get('/', validateQuery(listUsersSchema), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page, limit, role, active, search } = req.query as unknown as z.infer<typeof listUsersSchema>;
+    const { page, limit, role, active, search, tenant_id } = req.query as unknown as z.infer<typeof listUsersSchema>;
+
+    // SUPER_ADMIN can see all users or filter by tenant; others see only their own tenant
+    const resolvedTenantId = (req.user!.role as string) === 'SUPER_ADMIN'
+      ? (tenant_id ?? undefined)
+      : (req.user!.tenantId ?? undefined);
 
     const where = {
+      ...(resolvedTenantId !== undefined && { tenant_id: resolvedTenantId }),
       ...(role   !== undefined && { role }),
       ...(active !== undefined && { active }),
       ...(search && { name: { contains: search as string, mode: 'insensitive' as const } }),
@@ -33,16 +40,7 @@ router.get('/', validateQuery(listUsersSchema), async (req: Request, res: Respon
         where,
         ...paginate(page, limit),
         orderBy: { name: 'asc' },
-        select: {
-          id:         true,
-          email:      true,
-          name:       true,
-          role:       true,
-          phone:      true,
-          avatar_url: true,
-          active:     true,
-          created_at: true,
-        },
+        select: { id: true, email: true, name: true, role: true, phone: true, avatar_url: true, active: true, created_at: true },
       }),
     ]);
 
@@ -55,8 +53,11 @@ router.get('/', validateQuery(listUsersSchema), async (req: Request, res: Respon
 // GET /api/users/:id
 router.get('/:id', authorize(Role.ADMIN), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const user = await prisma.user.findUnique({
-      where:  { id: req.params['id'] },
+    const user = await prisma.user.findFirst({
+      where: {
+        id: req.params['id'],
+        ...((req.user!.role as string) !== 'SUPER_ADMIN' && req.user!.tenantId ? { tenant_id: req.user!.tenantId } : {}),
+      },
       select: { id: true, email: true, name: true, role: true, phone: true, avatar_url: true, active: true, created_at: true },
     });
     if (!user) { res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'User not found' } }); return; }
@@ -66,7 +67,7 @@ router.get('/:id', authorize(Role.ADMIN), async (req: Request, res: Response, ne
   }
 });
 
-// PATCH /api/users/:id/active  (admin: toggle active)
+// PATCH /api/users/:id/active
 router.patch('/:id/active', authorize(Role.ADMIN), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = await prisma.user.update({

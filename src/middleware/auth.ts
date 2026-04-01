@@ -7,12 +7,13 @@ import { UnauthorizedError } from './errorHandler';
 // ─── Extend Express Request ───────────────────────────────────────────────────
 
 export interface JwtPayload {
-  sub:   string;   // user id
-  email: string;
-  role:  Role;
-  name:  string;
-  iat?:  number;
-  exp?:  number;
+  sub:      string;   // user id
+  email:    string;
+  role:     Role;
+  name:     string;
+  tenantId: string | null;
+  iat?:     number;
+  exp?:     number;
 }
 
 declare global {
@@ -47,10 +48,6 @@ export function verifyRefreshToken(token: string): { sub: string } {
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
-/**
- * Extracts and verifies the Bearer JWT from the Authorization header.
- * Attaches the decoded payload to req.user.
- */
 export function authenticate(req: Request, _res: Response, next: NextFunction): void {
   const header = req.headers['authorization'];
 
@@ -74,11 +71,6 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
   }
 }
 
-/**
- * Optional auth: attaches req.user if a valid token is present,
- * but does NOT reject the request if no token is provided.
- * Useful for public endpoints that have enhanced behaviour when authenticated.
- */
 export function optionalAuthenticate(req: Request, _res: Response, next: NextFunction): void {
   const header = req.headers['authorization'];
 

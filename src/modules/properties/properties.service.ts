@@ -63,14 +63,19 @@ const propertySelect = {
 
 // ─── List ─────────────────────────────────────────────────────────────────────
 
-export async function listProperties(input: ListPropertiesInput, requesterId: string, requesterRole: Role) {
+export async function listProperties(
+  input: ListPropertiesInput,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
   const { page, limit, sort, type, operation, status, city, zone, price_min, price_max, bedrooms, agent_id } = input;
 
-  // Agents only see their own properties unless they explicitly filter
   const resolvedAgentId =
     requesterRole === Role.AGENT && !agent_id ? requesterId : agent_id;
 
   const where: Prisma.PropertyWhereInput = {
+    ...(tenantId          && { tenant_id: tenantId }),
     ...(type              && { type }),
     ...(operation         && { operation }),
     ...(status            && { status }),
@@ -98,8 +103,16 @@ export async function listProperties(input: ListPropertiesInput, requesterId: st
 
 // ─── Get by ID ────────────────────────────────────────────────────────────────
 
-export async function getPropertyById(id: string, requesterId: string, requesterRole: Role) {
-  const property = await prisma.property.findUnique({ where: { id }, select: propertySelect });
+export async function getPropertyById(
+  id: string,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
+  const property = await prisma.property.findFirst({
+    where: { id, ...(tenantId && { tenant_id: tenantId }) },
+    select: propertySelect,
+  });
   if (!property) throw new NotFoundError('Property');
   if (requesterRole === Role.AGENT && property.agent.id !== requesterId) {
     throw new ForbiddenError('You can only view your own properties');
@@ -109,27 +122,37 @@ export async function getPropertyById(id: string, requesterId: string, requester
 
 // ─── Get by slug (public) ─────────────────────────────────────────────────────
 
-export async function getPropertyBySlug(slug: string) {
-  const property = await prisma.property.findUnique({ where: { slug }, select: propertySelect });
+export async function getPropertyBySlug(slug: string, tenantId: string | null) {
+  const property = await prisma.property.findFirst({
+    where: { slug, ...(tenantId && { tenant_id: tenantId }) },
+    select: propertySelect,
+  });
   if (!property) throw new NotFoundError('Property');
   return property;
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
-export async function createProperty(input: CreatePropertyInput, requesterId: string, requesterRole: Role) {
+export async function createProperty(
+  input: CreatePropertyInput,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
+  if (!tenantId) throw new ForbiddenError('A tenant context is required to create a property');
   const agentId = requesterRole === Role.ADMIN && input.agent_id ? input.agent_id : requesterId;
   const slug    = await generateUniqueSlug(input.title);
 
   return prisma.property.create({
     data: {
       ...input,
-      agent_id: agentId,
+      agent_id:  agentId,
+      tenant_id: tenantId,
       slug,
-      price:    input.price,
-      area_m2:  input.area_m2,
-      lat:      input.lat,
-      lng:      input.lng,
+      price:   input.price,
+      area_m2: input.area_m2,
+      lat:     input.lat,
+      lng:     input.lng,
     },
     select: propertySelect,
   });
@@ -137,8 +160,17 @@ export async function createProperty(input: CreatePropertyInput, requesterId: st
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 
-export async function updateProperty(id: string, input: UpdatePropertyInput, requesterId: string, requesterRole: Role) {
-  const existing = await prisma.property.findUnique({ where: { id }, select: { agent_id: true } });
+export async function updateProperty(
+  id: string,
+  input: UpdatePropertyInput,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
+  const existing = await prisma.property.findFirst({
+    where: { id, ...(tenantId && { tenant_id: tenantId }) },
+    select: { agent_id: true },
+  });
   if (!existing) throw new NotFoundError('Property');
   if (requesterRole === Role.AGENT && existing.agent_id !== requesterId) {
     throw new ForbiddenError('You can only edit your own properties');
@@ -155,8 +187,17 @@ export async function updateProperty(id: string, input: UpdatePropertyInput, req
 
 // ─── Patch status ─────────────────────────────────────────────────────────────
 
-export async function patchPropertyStatus(id: string, input: PatchStatusInput, requesterId: string, requesterRole: Role) {
-  const existing = await prisma.property.findUnique({ where: { id }, select: { agent_id: true } });
+export async function patchPropertyStatus(
+  id: string,
+  input: PatchStatusInput,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
+  const existing = await prisma.property.findFirst({
+    where: { id, ...(tenantId && { tenant_id: tenantId }) },
+    select: { agent_id: true },
+  });
   if (!existing) throw new NotFoundError('Property');
   if (requesterRole === Role.AGENT && existing.agent_id !== requesterId) {
     throw new ForbiddenError('You can only update your own properties');
@@ -166,16 +207,14 @@ export async function patchPropertyStatus(id: string, input: PatchStatusInput, r
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
-export async function deleteProperty(id: string) {
-  const existing = await prisma.property.findUnique({
-    where:  { id },
+export async function deleteProperty(id: string, tenantId: string | null) {
+  const existing = await prisma.property.findFirst({
+    where:  { id, ...(tenantId && { tenant_id: tenantId }) },
     select: { id: true, images: { select: { url: true } } },
   });
   if (!existing) throw new NotFoundError('Property');
 
-  // Delete image files from disk
   await Promise.all(existing.images.map((img) => deleteImageFile(img.url)));
-
   await prisma.property.delete({ where: { id } });
 }
 
@@ -186,9 +225,10 @@ export async function addPropertyImages(
   files: Express.Multer.File[],
   requesterId: string,
   requesterRole: Role,
+  tenantId: string | null,
 ) {
-  const property = await prisma.property.findUnique({
-    where:  { id: propertyId },
+  const property = await prisma.property.findFirst({
+    where:  { id: propertyId, ...(tenantId && { tenant_id: tenantId }) },
     select: { agent_id: true, images: { select: { id: true } } },
   });
   if (!property) throw new NotFoundError('Property');
@@ -200,11 +240,10 @@ export async function addPropertyImages(
   }
 
   const processed = await Promise.all(files.map((f) => processAndSaveImage(f.buffer)));
-
   const hasCover  = await prisma.propertyImage.findFirst({ where: { property_id: propertyId, is_cover: true } });
   const baseOrder = property.images.length;
 
-  const created = await prisma.$transaction(
+  return prisma.$transaction(
     processed.map((img, i) =>
       prisma.propertyImage.create({
         data: {
@@ -216,16 +255,21 @@ export async function addPropertyImages(
       }),
     ),
   );
-
-  return created;
 }
 
-export async function deletePropertyImage(propertyId: string, imageId: string, requesterId: string, requesterRole: Role) {
+export async function deletePropertyImage(
+  propertyId: string,
+  imageId: string,
+  requesterId: string,
+  requesterRole: Role,
+  tenantId: string | null,
+) {
   const image = await prisma.propertyImage.findFirst({
-    where:  { id: imageId, property_id: propertyId },
-    include: { property: { select: { agent_id: true } } },
+    where:   { id: imageId, property_id: propertyId },
+    include: { property: { select: { agent_id: true, tenant_id: true } } },
   });
   if (!image) throw new NotFoundError('Image');
+  if (tenantId && image.property.tenant_id !== tenantId) throw new ForbiddenError('Access denied');
   if (requesterRole === Role.AGENT && image.property.agent_id !== requesterId) {
     throw new ForbiddenError('You can only delete images from your own properties');
   }
@@ -233,7 +277,6 @@ export async function deletePropertyImage(propertyId: string, imageId: string, r
   await deleteImageFile(image.url);
   await prisma.propertyImage.delete({ where: { id: imageId } });
 
-  // If deleted image was the cover, promote next image
   if (image.is_cover) {
     const next = await prisma.propertyImage.findFirst({
       where:   { property_id: propertyId },
@@ -248,8 +291,12 @@ export async function reorderPropertyImages(
   input: ReorderImagesInput,
   requesterId: string,
   requesterRole: Role,
+  tenantId: string | null,
 ) {
-  const property = await prisma.property.findUnique({ where: { id: propertyId }, select: { agent_id: true } });
+  const property = await prisma.property.findFirst({
+    where: { id: propertyId, ...(tenantId && { tenant_id: tenantId }) },
+    select: { agent_id: true },
+  });
   if (!property) throw new NotFoundError('Property');
   if (requesterRole === Role.AGENT && property.agent_id !== requesterId) {
     throw new ForbiddenError('You can only reorder images from your own properties');
