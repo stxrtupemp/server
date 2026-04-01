@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "Role" AS ENUM ('ADMIN', 'AGENT', 'VIEWER');
+CREATE TYPE "Role" AS ENUM ('SUPER_ADMIN', 'ADMIN', 'AGENT', 'VIEWER');
 
 -- CreateEnum
 CREATE TYPE "PropertyType" AS ENUM ('APARTMENT', 'HOUSE', 'LAND', 'COMMERCIAL', 'OFFICE');
@@ -26,6 +26,20 @@ CREATE TYPE "TaskPriority" AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'URGENT');
 CREATE TYPE "NoteEntityType" AS ENUM ('PROPERTY', 'CLIENT', 'DEAL');
 
 -- CreateTable
+CREATE TABLE "tenants" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "domain" TEXT,
+    "logo_url" TEXT,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "tenants_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
@@ -35,6 +49,7 @@ CREATE TABLE "users" (
     "phone" TEXT,
     "avatar_url" TEXT,
     "active" BOOLEAN NOT NULL DEFAULT true,
+    "tenant_id" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -63,6 +78,7 @@ CREATE TABLE "properties" (
     "lng" DECIMAL(11,8),
     "features" JSONB,
     "agent_id" TEXT NOT NULL,
+    "tenant_id" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -92,6 +108,7 @@ CREATE TABLE "clients" (
     "source" "ClientSource" NOT NULL DEFAULT 'OTHER',
     "notes" TEXT,
     "agent_id" TEXT NOT NULL,
+    "tenant_id" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -104,6 +121,7 @@ CREATE TABLE "deals" (
     "property_id" TEXT NOT NULL,
     "client_id" TEXT NOT NULL,
     "agent_id" TEXT NOT NULL,
+    "tenant_id" TEXT NOT NULL,
     "status" "DealStatus" NOT NULL DEFAULT 'LEAD',
     "amount" DECIMAL(14,2),
     "commission_pct" DECIMAL(5,2),
@@ -128,6 +146,7 @@ CREATE TABLE "tasks" (
     "client_id" TEXT,
     "assigned_to" TEXT NOT NULL,
     "created_by" TEXT NOT NULL,
+    "tenant_id" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -141,6 +160,7 @@ CREATE TABLE "notes" (
     "entity_type" "NoteEntityType" NOT NULL,
     "entity_id" TEXT NOT NULL,
     "author_id" TEXT NOT NULL,
+    "tenant_id" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -156,11 +176,24 @@ CREATE TABLE "web_contacts" (
     "phone" TEXT,
     "message" TEXT NOT NULL,
     "read" BOOLEAN NOT NULL DEFAULT false,
+    "tenant_id" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "web_contacts_pkey" PRIMARY KEY ("id")
 );
+
+-- CreateIndex
+CREATE UNIQUE INDEX "tenants_slug_key" ON "tenants"("slug");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "tenants_domain_key" ON "tenants"("domain");
+
+-- CreateIndex
+CREATE INDEX "tenants_slug_idx" ON "tenants"("slug");
+
+-- CreateIndex
+CREATE INDEX "tenants_active_idx" ON "tenants"("active");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
@@ -175,6 +208,9 @@ CREATE INDEX "users_role_idx" ON "users"("role");
 CREATE INDEX "users_active_idx" ON "users"("active");
 
 -- CreateIndex
+CREATE INDEX "users_tenant_id_idx" ON "users"("tenant_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "properties_slug_key" ON "properties"("slug");
 
 -- CreateIndex
@@ -182,6 +218,9 @@ CREATE INDEX "properties_slug_idx" ON "properties"("slug");
 
 -- CreateIndex
 CREATE INDEX "properties_agent_id_idx" ON "properties"("agent_id");
+
+-- CreateIndex
+CREATE INDEX "properties_tenant_id_idx" ON "properties"("tenant_id");
 
 -- CreateIndex
 CREATE INDEX "properties_status_idx" ON "properties"("status");
@@ -217,6 +256,9 @@ CREATE INDEX "property_images_property_id_order_idx" ON "property_images"("prope
 CREATE INDEX "clients_agent_id_idx" ON "clients"("agent_id");
 
 -- CreateIndex
+CREATE INDEX "clients_tenant_id_idx" ON "clients"("tenant_id");
+
+-- CreateIndex
 CREATE INDEX "clients_email_idx" ON "clients"("email");
 
 -- CreateIndex
@@ -230,6 +272,9 @@ CREATE INDEX "clients_created_at_idx" ON "clients"("created_at");
 
 -- CreateIndex
 CREATE INDEX "deals_agent_id_idx" ON "deals"("agent_id");
+
+-- CreateIndex
+CREATE INDEX "deals_tenant_id_idx" ON "deals"("tenant_id");
 
 -- CreateIndex
 CREATE INDEX "deals_property_id_idx" ON "deals"("property_id");
@@ -253,6 +298,9 @@ CREATE INDEX "tasks_assigned_to_idx" ON "tasks"("assigned_to");
 CREATE INDEX "tasks_created_by_idx" ON "tasks"("created_by");
 
 -- CreateIndex
+CREATE INDEX "tasks_tenant_id_idx" ON "tasks"("tenant_id");
+
+-- CreateIndex
 CREATE INDEX "tasks_deal_id_idx" ON "tasks"("deal_id");
 
 -- CreateIndex
@@ -274,6 +322,9 @@ CREATE INDEX "tasks_priority_idx" ON "tasks"("priority");
 CREATE INDEX "notes_author_id_idx" ON "notes"("author_id");
 
 -- CreateIndex
+CREATE INDEX "notes_tenant_id_idx" ON "notes"("tenant_id");
+
+-- CreateIndex
 CREATE INDEX "notes_entity_type_entity_id_idx" ON "notes"("entity_type", "entity_id");
 
 -- CreateIndex
@@ -283,10 +334,19 @@ CREATE INDEX "notes_created_at_idx" ON "notes"("created_at");
 CREATE INDEX "web_contacts_property_id_idx" ON "web_contacts"("property_id");
 
 -- CreateIndex
+CREATE INDEX "web_contacts_tenant_id_idx" ON "web_contacts"("tenant_id");
+
+-- CreateIndex
 CREATE INDEX "web_contacts_read_idx" ON "web_contacts"("read");
 
 -- CreateIndex
 CREATE INDEX "web_contacts_created_at_idx" ON "web_contacts"("created_at");
+
+-- AddForeignKey
+ALTER TABLE "users" ADD CONSTRAINT "users_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "properties" ADD CONSTRAINT "properties_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "properties" ADD CONSTRAINT "properties_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -295,7 +355,13 @@ ALTER TABLE "properties" ADD CONSTRAINT "properties_agent_id_fkey" FOREIGN KEY (
 ALTER TABLE "property_images" ADD CONSTRAINT "property_images_property_id_fkey" FOREIGN KEY ("property_id") REFERENCES "properties"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "clients" ADD CONSTRAINT "clients_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "clients" ADD CONSTRAINT "clients_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "deals" ADD CONSTRAINT "deals_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "deals" ADD CONSTRAINT "deals_property_id_fkey" FOREIGN KEY ("property_id") REFERENCES "properties"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -305,6 +371,9 @@ ALTER TABLE "deals" ADD CONSTRAINT "deals_client_id_fkey" FOREIGN KEY ("client_i
 
 -- AddForeignKey
 ALTER TABLE "deals" ADD CONSTRAINT "deals_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_deal_id_fkey" FOREIGN KEY ("deal_id") REFERENCES "deals"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -322,8 +391,13 @@ ALTER TABLE "tasks" ADD CONSTRAINT "tasks_assigned_to_fkey" FOREIGN KEY ("assign
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "notes" ADD CONSTRAINT "notes_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "notes" ADD CONSTRAINT "notes_author_id_fkey" FOREIGN KEY ("author_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "web_contacts" ADD CONSTRAINT "web_contacts_property_id_fkey" FOREIGN KEY ("property_id") REFERENCES "properties"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "web_contacts" ADD CONSTRAINT "web_contacts_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+-- AddForeignKey
+ALTER TABLE "web_contacts" ADD CONSTRAINT "web_contacts_property_id_fkey" FOREIGN KEY ("property_id") REFERENCES "properties"("id") ON DELETE SET NULL ON UPDATE CASCADE;
