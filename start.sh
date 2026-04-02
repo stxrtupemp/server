@@ -14,5 +14,8 @@ npx prisma migrate deploy || {
 
 echo ">> Migrations done"
 
+echo ">> Checking seed..."
+npx tsx prisma/seed-if-empty.ts
+
 echo ">> Starting server..."
 exec node dist/index.js
