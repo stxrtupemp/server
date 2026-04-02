@@ -24,7 +24,7 @@ async function hash(plain: string): Promise<string> {
 async function main(): Promise<void> {
   console.log('🌱  Starting seed...');
 
-  // ── 0. Cleanup (orden: restricciones FK) ──────────────────────────────────
+  // ── 0. Cleanup (FK order: deepest first) ──────────────────────────────────
   await prisma.note.deleteMany();
   await prisma.task.deleteMany();
   await prisma.deal.deleteMany();
@@ -33,10 +33,37 @@ async function main(): Promise<void> {
   await prisma.property.deleteMany();
   await prisma.client.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.tenant.deleteMany();
 
-  // ── 1. Users ──────────────────────────────────────────────────────────────
+  // ── 1. Tenant ─────────────────────────────────────────────────────────────
+  const TENANT_ID = 'DEFAULT_TENANT_001';
+
+  const tenant = await prisma.tenant.create({
+    data: {
+      id:     TENANT_ID,
+      name:   'CRM Inmobiliario Demo',
+      slug:   'default',
+      active: true,
+    },
+  });
+
+  console.log(`  ✓ Tenant: ${tenant.name} (slug: ${tenant.slug})`);
+
+  // ── 2. Users ──────────────────────────────────────────────────────────────
+  const superPassword = await hash('Super1234!');
   const adminPassword = await hash('Admin1234!');
   const agentPassword = await hash('Agent1234!');
+
+  const superAdmin = await prisma.user.create({
+    data: {
+      email:         'super@crminmobiliario.es',
+      password_hash: superPassword,
+      name:          'Super Admin',
+      role:          Role.SUPER_ADMIN,
+      active:        true,
+      tenant_id:     null,  // SUPER_ADMIN has no tenant
+    },
+  });
 
   const admin = await prisma.user.create({
     data: {
@@ -46,6 +73,7 @@ async function main(): Promise<void> {
       role:          Role.ADMIN,
       phone:         '+34 600 000 001',
       active:        true,
+      tenant_id:     TENANT_ID,
     },
   });
 
@@ -57,12 +85,13 @@ async function main(): Promise<void> {
       role:          Role.AGENT,
       phone:         '+34 600 000 002',
       active:        true,
+      tenant_id:     TENANT_ID,
     },
   });
 
-  console.log(`  ✓ Users: ${admin.email}, ${agent.email}`);
+  console.log(`  ✓ Users: ${superAdmin.email}, ${admin.email}, ${agent.email}`);
 
-  // ── 2. Properties ─────────────────────────────────────────────────────────
+  // ── 3. Properties ─────────────────────────────────────────────────────────
   const propertiesData = [
     {
       title:       'Ático con terraza en Salamanca',
@@ -177,6 +206,7 @@ async function main(): Promise<void> {
           lng:        p.lng,
           features:   p.features,
           agent_id:   p.agent_id,
+          tenant_id:  TENANT_ID,
         },
       }),
     ),
@@ -195,47 +225,49 @@ async function main(): Promise<void> {
 
   console.log(`  ✓ Properties: ${properties.map((p) => p.title).join(', ')}`);
 
-  // ── 3. Clients ────────────────────────────────────────────────────────────
+  // ── 4. Clients ────────────────────────────────────────────────────────────
   const client1 = await prisma.client.create({
     data: {
-      name:     'Andrés Moreno',
-      email:    'andres.moreno@email.com',
-      phone:    '+34 611 222 333',
-      type:     ClientType.BUYER,
-      source:   ClientSource.WEB,
-      notes:    'Interesado en pisos de lujo en Madrid centro. Presupuesto hasta 1,5M€. Quiere 3–4 habitaciones.',
-      agent_id: agent.id,
+      name:      'Andrés Moreno',
+      email:     'andres.moreno@email.com',
+      phone:     '+34 611 222 333',
+      type:      ClientType.BUYER,
+      source:    ClientSource.WEB,
+      notes:     'Interesado en pisos de lujo en Madrid centro. Presupuesto hasta 1,5M€. Quiere 3–4 habitaciones.',
+      agent_id:  agent.id,
+      tenant_id: TENANT_ID,
     },
   });
 
   const client2 = await prisma.client.create({
     data: {
-      name:     'Sofía Castillo',
-      email:    'sofia.castillo@empresa.com',
-      phone:    '+34 622 333 444',
-      type:     ClientType.TENANT,
-      source:   ClientSource.REFERRAL,
-      notes:    'Busca apartamento en Barcelona, cerca del centro. Presupuesto 2.000–2.500€/mes.',
-      agent_id: agent.id,
+      name:      'Sofía Castillo',
+      email:     'sofia.castillo@empresa.com',
+      phone:     '+34 622 333 444',
+      type:      ClientType.TENANT,
+      source:    ClientSource.REFERRAL,
+      notes:     'Busca apartamento en Barcelona, cerca del centro. Presupuesto 2.000–2.500€/mes.',
+      agent_id:  agent.id,
+      tenant_id: TENANT_ID,
     },
   });
 
   const client3 = await prisma.client.create({
     data: {
-      name:     'Inversiones Romero SL',
-      email:    'contacto@inversionesromero.es',
-      phone:    '+34 91 444 5566',
-      type:     ClientType.BUYER,
-      source:   ClientSource.PORTAL,
-      notes:    'Empresa inversora. Busca locales comerciales y solares para desarrollo. Operaciones +500K€.',
-      agent_id: admin.id,
+      name:      'Inversiones Romero SL',
+      email:     'contacto@inversionesromero.es',
+      phone:     '+34 91 444 5566',
+      type:      ClientType.BUYER,
+      source:    ClientSource.PORTAL,
+      notes:     'Empresa inversora. Busca locales comerciales y solares para desarrollo. Operaciones +500K€.',
+      agent_id:  admin.id,
+      tenant_id: TENANT_ID,
     },
   });
 
   console.log(`  ✓ Clients: ${client1.name}, ${client2.name}, ${client3.name}`);
 
-  // ── 4. Deals ──────────────────────────────────────────────────────────────
-
+  // ── 5. Deals ──────────────────────────────────────────────────────────────
   const [propSalamanca, , propBarcelona, , propSolar] = properties as [
     typeof properties[0],
     typeof properties[0],
@@ -249,6 +281,7 @@ async function main(): Promise<void> {
       property_id:    propSalamanca.id,
       client_id:      client1.id,
       agent_id:       agent.id,
+      tenant_id:      TENANT_ID,
       status:         DealStatus.VISIT,
       amount:         1_220_000,
       commission_pct: 3.0,
@@ -262,6 +295,7 @@ async function main(): Promise<void> {
       property_id:    propBarcelona.id,
       client_id:      client2.id,
       agent_id:       agent.id,
+      tenant_id:      TENANT_ID,
       status:         DealStatus.NEGOTIATION,
       amount:         2_300,
       commission_pct: 5.0,
@@ -275,6 +309,7 @@ async function main(): Promise<void> {
       property_id:    propSolar.id,
       client_id:      client3.id,
       agent_id:       admin.id,
+      tenant_id:      TENANT_ID,
       status:         DealStatus.LEAD,
       amount:         360_000,
       commission_pct: 2.5,
@@ -285,65 +320,69 @@ async function main(): Promise<void> {
 
   console.log(`  ✓ Deals: ${deal1.id}, ${deal2.id}, ${deal3.id}`);
 
-  // ── 5. Tasks ──────────────────────────────────────────────────────────────
+  // ── 6. Tasks ──────────────────────────────────────────────────────────────
   await prisma.task.createMany({
     data: [
       {
         title:       'Llamar a Andrés para confirmar segunda visita',
         description: 'Confirmar disponibilidad para el próximo jueves o viernes por la tarde.',
-        due_date:    new Date('2025-04-05'),
+        due_date:    new Date('2026-04-10'),
         completed:   false,
         priority:    TaskPriority.HIGH,
         deal_id:     deal1.id,
         client_id:   client1.id,
         assigned_to: agent.id,
         created_by:  agent.id,
+        tenant_id:   TENANT_ID,
       },
       {
         title:       'Preparar contrato de arrendamiento para Sofía',
         description: 'Borrador de contrato una vez confirmada la reducción de precio.',
-        due_date:    new Date('2025-04-10'),
+        due_date:    new Date('2026-04-15'),
         completed:   false,
         priority:    TaskPriority.URGENT,
         deal_id:     deal2.id,
         client_id:   client2.id,
         assigned_to: agent.id,
         created_by:  admin.id,
+        tenant_id:   TENANT_ID,
       },
       {
         title:       'Enviar dosier del solar a Inversiones Romero',
         description: 'Incluir: plano catastral, informe urbanístico, memoria de calidades y estimación de costes.',
-        due_date:    new Date('2025-04-08'),
+        due_date:    new Date('2026-04-12'),
         completed:   false,
         priority:    TaskPriority.MEDIUM,
         deal_id:     deal3.id,
         client_id:   client3.id,
         assigned_to: admin.id,
         created_by:  admin.id,
+        tenant_id:   TENANT_ID,
       },
       {
         title:       'Actualizar fotografías del ático en Salamanca',
         description: 'Contratar fotógrafo profesional. Solicitar fotos en horario de tarde para mejor luz.',
-        due_date:    new Date('2025-04-12'),
+        due_date:    new Date('2026-04-18'),
         completed:   false,
         priority:    TaskPriority.MEDIUM,
         property_id: propSalamanca.id,
         assigned_to: agent.id,
         created_by:  admin.id,
+        tenant_id:   TENANT_ID,
       },
     ],
   });
 
   console.log('  ✓ Tasks: 4 created');
 
-  // ── 6. Notes ──────────────────────────────────────────────────────────────
-  // Notes — use skipDuplicates and connect only the matching entity to avoid polymorphic FK conflict
+  // ── 7. Notes ──────────────────────────────────────────────────────────────
   await prisma.note.create({
     data: {
       content:     'El propietario confirma que acepta mascotas pequeñas si el inquilino aporta garantía adicional.',
       entity_type: 'PROPERTY',
       entity_id:   propBarcelona.id,
       author_id:   agent.id,
+      tenant_id:   TENANT_ID,
     },
   });
 
@@ -353,6 +392,7 @@ async function main(): Promise<void> {
       entity_type: 'CLIENT',
       entity_id:   client1.id,
       author_id:   agent.id,
+      tenant_id:   TENANT_ID,
     },
   });
 
@@ -362,12 +402,13 @@ async function main(): Promise<void> {
       entity_type: 'DEAL',
       entity_id:   deal2.id,
       author_id:   agent.id,
+      tenant_id:   TENANT_ID,
     },
   });
 
   console.log('  ✓ Notes: 3 created');
 
-  // ── 7. Web Contacts ───────────────────────────────────────────────────────
+  // ── 8. Web Contacts ───────────────────────────────────────────────────────
   await prisma.webContact.createMany({
     data: [
       {
@@ -377,6 +418,7 @@ async function main(): Promise<void> {
         phone:       '+34 633 111 222',
         message:     'Buenos días, me gustaría concertar una visita para esta semana si fuera posible. Estoy muy interesada en el inmueble.',
         read:        false,
+        tenant_id:   TENANT_ID,
       },
       {
         property_id: null,
@@ -385,6 +427,7 @@ async function main(): Promise<void> {
         phone:       null,
         message:     'Busco piso en alquiler en Barcelona, Eixample o Gràcia, 2 habitaciones, hasta 2.000€/mes. ¿Tienen algo disponible?',
         read:        false,
+        tenant_id:   TENANT_ID,
       },
     ],
   });
@@ -394,6 +437,7 @@ async function main(): Promise<void> {
   // ─────────────────────────────────────────────────────────────────────────
   console.log('\n✅  Seed completed successfully!\n');
   console.log('   Credentials:');
+  console.log('   👤 super@crminmobiliario.es  / Super1234!  (SUPER_ADMIN)');
   console.log('   👤 admin@crminmobiliario.es  / Admin1234!  (ADMIN)');
   console.log('   👤 agente@crminmobiliario.es / Agent1234!  (AGENT)\n');
 }
